@@ -359,7 +359,7 @@ def search(term, num_results=10, lang="en", proxy=None, advanced=False, sleep_in
             resp = _req(term, num_results - start,
                         lang, start, proxies, timeout, safe, ssl_verify, region)
         else:
-            resp = _req(terms, num_results - start,
+            resp = _req(term, num_results - start,
                         lang, start, proxies, timeout, safe, ssl_verify, region, javascript=True)
 
             yield BeautifulSoup(resp.text, "html.parser")
