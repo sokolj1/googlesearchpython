@@ -2,7 +2,7 @@
 from time import sleep
 from bs4 import BeautifulSoup
 from requests import get
-from urllib.parse import unquote # to decode the url
+from urllib.parse import unquote  # to decode the url
 from .user_agents import get_useragent
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -10,11 +10,13 @@ from selenium.webdriver.support import expected_conditions as EC
 import requests
 from seleniumbase import Driver
 
+
 class PlaywrightResponse:
     """
     A minimal "response-like" class to mimic requests.Response enough
     that your downstream code can check .status_code or .text.
     """
+
     def __init__(self, status_code: int, html: str):
         self.status_code = status_code
         self._html = html
@@ -31,8 +33,8 @@ class PlaywrightResponse:
     @property
     def content(self):
         return self._html.encode("utf-8")
-    
-    
+
+
 def _fetch_playwright(
     url: str,
     user_agent: str,
@@ -60,34 +62,36 @@ def _fetch_playwright(
     driver = Driver(uc=True, headless=True)
     # Set the page load timeout (in seconds)
     driver.set_page_load_timeout(timeout)
-    
+
     try:
         # Navigate to the URL
         driver.get(url)
-        
+
         # If a CSS selector is provided, wait for it to be visible on the page.
         if selector:
             try:
                 WebDriverWait(driver, timeout).until(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, selector))
+                    EC.visibility_of_element_located(
+                        (By.CSS_SELECTOR, selector))
                 )
             except Exception as e:
-                print(f"Warning: Selector '{selector}' not found before timeout. Error: {e}")
-        
+                print(
+                    f"Warning: Selector '{selector}' not found before timeout. Error: {e}")
+
         # Retrieve the final HTML source of the page
         final_html = driver.page_source
-        
+
         # Write the HTML to a file
-        with open('/Users/johnsokol/Desktop/google_headless.html', 'w', encoding='utf-8') as f:
-            f.write(final_html)
-    
+        # with open('/Users/johnsokol/Desktop/google_headless.html', 'w', encoding='utf-8') as f:
+        #     f.write(final_html)
+
         # Build the response object
         response_obj = PlaywrightResponse(status_code=200, html=final_html)
-    
+
     finally:
         # Ensure the browser is closed regardless of success or failure
         driver.quit()
-    
+
     return response_obj
 
 
@@ -140,9 +144,9 @@ def _req(
         "CONSENT": "PENDING+987",  # Attempt to bypass Google's consent page
         "SOCS": "CAESHAgBEhIaAB"
     }
-    
+
     base_url = "https://www.google.com/search"
-    
+
     url = requests.Request("GET", base_url, params=params).prepare().url
 
     # ---------------------------
@@ -179,6 +183,7 @@ def _req(
         resp.raise_for_status()
         return resp
 
+
 '''
 def _req(term, results, lang, start, proxies, timeout, safe, ssl_verify, region):
     resp = get(
@@ -207,6 +212,7 @@ def _req(term, results, lang, start, proxies, timeout, safe, ssl_verify, region)
     return resp
 '''
 
+
 class SearchResult:
     def __init__(self, url, title, description):
         self.url = url
@@ -221,28 +227,29 @@ def search(term, num_results=10, lang="en", proxy=None, advanced=False, sleep_in
     """Search the Google search engine"""
 
     # Proxy setup
-    proxies = {"https": proxy, "http": proxy} if proxy and (proxy.startswith("https") or proxy.startswith("http")) else None
+    proxies = {"https": proxy, "http": proxy} if proxy and (
+        proxy.startswith("https") or proxy.startswith("http")) else None
 
     start = start_num
     fetched_results = 0  # Keep track of the total fetched results
-    fetched_links = set() # to keep track of links that are already seen previously
+    fetched_links = set()  # to keep track of links that are already seen previously
 
     while fetched_results < num_results:
         # Send request
-        
+
         if not javascript:
             resp = _req(term, num_results - start,
                         lang, start, proxies, timeout, safe, ssl_verify, region)
         else:
             resp = _req(term, num_results - start,
                         lang, start, proxies, timeout, safe, ssl_verify, region, javascript=True)
-            
+
             yield BeautifulSoup(resp.text, "html.parser")
-        
+
         # put in file - comment for debugging purpose
         # with open('google.html', 'w') as f:
         #     f.write(resp.text)
-        
+
         # Parse
         soup = BeautifulSoup(resp.text, "html.parser")
         result_block = soup.find_all("div", class_="ezO2md")
@@ -252,16 +259,19 @@ def search(term, num_results=10, lang="en", proxy=None, advanced=False, sleep_in
             # Find the link tag within the result block
             link_tag = result.find("a", href=True)
             # Find the title tag within the link tag
-            title_tag = link_tag.find("span", class_="CVA68e") if link_tag else None
+            title_tag = link_tag.find(
+                "span", class_="CVA68e") if link_tag else None
             # Find the description tag within the result block
             description_tag = result.find("span", class_="FrIlee")
 
             # Check if all necessary tags are found
             if link_tag and title_tag and description_tag:
                 # Extract and decode the link URL
-                link = unquote(link_tag["href"].split("&")[0].replace("/url?q=", "")) if link_tag else ""
+                link = unquote(link_tag["href"].split("&")[0].replace(
+                    "/url?q=", "")) if link_tag else ""
             # Extract and decode the link URL
-            link = unquote(link_tag["href"].split("&")[0].replace("/url?q=", "")) if link_tag else ""
+            link = unquote(link_tag["href"].split("&")[0].replace(
+                "/url?q=", "")) if link_tag else ""
             # Check if the link has already been fetched and if unique results are required
             if link in fetched_links and unique:
                 continue  # Skip this result if the link is not unique
@@ -277,7 +287,8 @@ def search(term, num_results=10, lang="en", proxy=None, advanced=False, sleep_in
             new_results += 1
             # Yield the result based on the advanced flag
             if advanced:
-                yield SearchResult(link, title, description)  # Yield a SearchResult object
+                # Yield a SearchResult object
+                yield SearchResult(link, title, description)
             else:
                 yield link  # Yield only the link
 
@@ -285,8 +296,8 @@ def search(term, num_results=10, lang="en", proxy=None, advanced=False, sleep_in
                 break  # Stop if we have fetched the desired number of results
 
         if new_results == 0:
-            #If you want to have printed to your screen that the desired amount of queries can not been fulfilled, uncomment the line below:
-            #print(f"Only {fetched_results} results found for query requiring {num_results} results. Moving on to the next query.")
+            # If you want to have printed to your screen that the desired amount of queries can not been fulfilled, uncomment the line below:
+            # print(f"Only {fetched_results} results found for query requiring {num_results} results. Moving on to the next query.")
             break  # Break the loop if no new results were found in this iteration
 
         start += 10  # Prepare for the next set of results
