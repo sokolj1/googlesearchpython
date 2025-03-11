@@ -9,7 +9,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import requests
 from seleniumbase import Driver
-
+from fake_useragent import UserAgent as FakeUserAgent
+from urllib.parse import urlparse
+import zipfile
+import os
 
 class PlaywrightResponse:
     """
@@ -34,12 +37,110 @@ class PlaywrightResponse:
     def content(self):
         return self._html.encode("utf-8")
 
+def create_proxy_auth_extension(proxy_host, proxy_port, proxy_user, proxy_pass, scheme='http', plugin_path=None):
+    if plugin_path is None:
+        plugin_path = 'proxy_auth_plugin.zip'
+
+    manifest_json = """
+    {
+        "version": "1.0.0",
+        "manifest_version": 2,
+        "name": "Chrome Proxy",
+        "permissions": [
+            "proxy",
+            "tabs",
+            "unlimitedStorage",
+            "storage",
+            "<all_urls>",
+            "webRequest",
+            "webRequestBlocking"
+        ],
+        "background": {
+            "scripts": ["background.js"]
+        }
+    }
+    """
+
+    background_js = f"""
+    var config = {{
+        mode: "fixed_servers",
+        rules: {{
+            singleProxy: {{
+                scheme: "{scheme}",
+                host: "{proxy_host}",
+                port: parseInt({proxy_port})
+            }},
+            bypassList: ["localhost"]
+        }}
+    }};
+
+    chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
+
+    function callbackFn(details) {{
+        return {{
+            authCredentials: {{
+                username: "{proxy_user}",
+                password: "{proxy_pass}"
+            }}
+        }};
+    }}
+
+    chrome.webRequest.onAuthRequired.addListener(
+        callbackFn,
+        {{urls: ["<all_urls>"]}},
+        ["blocking"]
+    );
+    """
+
+    with zipfile.ZipFile(plugin_path, 'w') as zp:
+        zp.writestr("manifest.json", manifest_json)
+        zp.writestr("background.js", background_js)
+
+    return plugin_path
+
+def setup_seleniumbase_parameters(proxy_url):
+
+    if proxy_url:
+        # Parse the proxy URL
+        parsed = urlparse(proxy_url)
+        proxy_scheme = parsed.scheme
+        proxy_netloc = parsed.netloc
+
+        if '@' in proxy_netloc:
+            # Extract authentication and proxy server details
+            auth_info, host_info = proxy_netloc.split('@')
+            proxy_user, proxy_pass = auth_info.split(':')
+            proxy_host, proxy_port = host_info.split(':')
+        else:
+            # No authentication in proxy URL
+            proxy_host, proxy_port = proxy_netloc.split(':')
+            proxy_user = ''
+            proxy_pass = ''
+
+        # Create the proxy authentication extension
+        pluginfile = create_proxy_auth_extension(
+            proxy_host=proxy_host,
+            proxy_port=proxy_port,
+            proxy_user=proxy_user,
+            proxy_pass=proxy_pass,
+            scheme=proxy_scheme
+        )
+
+    else:
+        pluginfile = None
+
+    # Generate a random mobile user agent
+    ua = FakeUserAgent()
+    user_agent = ua.random
+
+    return pluginfile, user_agent
 
 def _fetch_playwright(
     url: str,
     user_agent: str,
     timeout: int,
     selector: str = None,
+    proxies: dict = None, 
 ):
     """
     Launches a browser via undetected_chromedriver (Selenium), navigates to `url`,
@@ -52,14 +153,24 @@ def _fetch_playwright(
     :param selector: An optional CSS selector to wait for (e.g. "div.YrbPuc").
     :return: A PlaywrightResponse with .status_code and .text.
     """
-    # Set up Chrome options similar to your original Playwright arguments
-    # options = uc.ChromeOptions()
-    # options.add_argument("--disable-blink-features=AutomationControlled")
-    # options.add_argument("--no-sandbox")
-    # options.add_argument(f"--user-agent={user_agent}")
-    # Initialize undetected_chromedriver (which includes stealth measures by default)
-    # driver = uc.Chrome(options=options)
-    driver = Driver(uc=True, headless=True)
+    if proxies:
+        print("Using proxies: {}".format(proxies))
+        proxy_url = proxies.get('https') or proxies.get('http')
+        pluginfile, user_agent = setup_seleniumbase_parameters(proxy_url)
+    else:
+        pluginfile = None
+        # Generate a random mobile user agent
+        ua = FakeUserAgent()
+        user_agent = ua.random
+    
+    driver = Driver(
+                    browser='chrome',
+                    uc=True, 
+                    headless=True, 
+                    agent=user_agent, 
+                    extension_zip=pluginfile,
+                    incognito=True,
+                    disable_csp=True)
     # Set the page load timeout (in seconds)
     driver.set_page_load_timeout(timeout)
 
@@ -82,15 +193,22 @@ def _fetch_playwright(
         final_html = driver.page_source
 
         # Write the HTML to a file
-        # with open('/Users/johnsokol/Desktop/google_headless.html', 'w', encoding='utf-8') as f:
-        #     f.write(final_html)
+        with open('google_headless.html', 'w', encoding='utf-8') as f:
+            f.write(final_html)
 
         # Build the response object
         response_obj = PlaywrightResponse(status_code=200, html=final_html)
-
+        
+    except Exception as e:
+        raise e
+    
     finally:
         # Ensure the browser is closed regardless of success or failure
         driver.quit()
+        
+        # Clean up the plugin file
+        if pluginfile and os.path.exists(pluginfile):
+            os.remove(pluginfile)
 
     return response_obj
 
@@ -178,7 +296,8 @@ def _req(
             url=url,
             user_agent=get_useragent(),
             timeout=timeout,
-            selector=selector
+            selector=selector, 
+            proxies=proxies
         )
         resp.raise_for_status()
         return resp
