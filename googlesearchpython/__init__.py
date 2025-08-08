@@ -188,6 +188,7 @@ def _fetch_playwright(
             except Exception as e:
                 print(
                     f"Warning: Selector '{selector}' not found before timeout. Error: {e}")
+                raise e
 
         # Retrieve the final HTML source of the page
         final_html = driver.page_source
@@ -290,8 +291,6 @@ def _req(
         # Use Playwright
         # Example: Wait for "div.YrbPuc" as a snippet container
         selector = "div.YrbPuc"
-        # If your page loads a different snippet or other dynamic content,
-        # change the selector or remove it if not needed.
         resp = _fetch_playwright(
             url=url,
             user_agent=get_useragent(),
